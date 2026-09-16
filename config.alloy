@@ -1,0 +1,39 @@
+prometheus.exporter.unix "host" {
+  procfs_path    = "/host/proc"
+  sysfs_path     = "/host/sys"
+  rootfs_path    = "/host/root"
+  udev_data_path = "/run/udev/data"
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  scrape_interval = "15s"
+  forward_to      = [prometheus.relabel.host.receiver]
+}
+
+prometheus.relabel "host" {
+  forward_to = [prometheus.remote_write.prometheus.receiver]
+
+  rule {
+    target_label = "instance"
+    replacement  = sys.env("INSTANCE")
+  }
+  rule {
+    target_label = "environment"
+    replacement  = sys.env("ENVIRONMENT")
+  }
+  rule {
+    target_label = "site"
+    replacement  = sys.env("SITE")
+  }
+  rule {
+    target_label = "role"
+    replacement  = sys.env("ROLE")
+  }
+}
+
+prometheus.remote_write "prometheus" {
+  endpoint {
+    url = sys.env("PROMETHEUS_URL")
+  }
+}
