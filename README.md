@@ -23,7 +23,7 @@ Replace `prometheus.example.com` with your receiver's real address. The URL in `
 
 Alternatively, clone the repository yourself and run `./install.sh` from the checkout. Missing arguments are prompted in a terminal. Without a terminal, the script uses values from `.env.example` or an existing `.env`; you must still supply a real Prometheus URL.
 
-Add `--ui` to expose the Alloy diagnostic UI at `127.0.0.1:12345` on the server. A later run with `--no-ui` releases that fixed port. The container uses host networking, but Alloy binds only to loopback.
+Alloy listens on `127.0.0.1:12345` by default. To use a different local port, edit `ALLOY_HTTP_LISTEN_ADDR` in `.env` and run `docker compose up -d`. The installer preserves this setting on later runs. The address must stay on `127.0.0.1`.
 
 ## Verify
 
@@ -41,7 +41,7 @@ node_uname_info{instance="web-01",environment="production",site="london",role="w
 
 Then check `node_cpu_seconds_total`, `node_memory_MemAvailable_bytes`, `node_filesystem_avail_bytes`, and `node_network_receive_bytes_total` with the same `instance`. Allow about a minute for the first samples.
 
-If you enabled the UI, check `curl http://127.0.0.1:12345/-/ready` on the server. From your workstation, use `ssh -L 12345:127.0.0.1:12345 user@server` and open `http://127.0.0.1:12345/` locally.
+Check `curl http://127.0.0.1:12345/-/ready` on the server. From your workstation, use `ssh -L 12345:127.0.0.1:12345 user@server` and open `http://127.0.0.1:12345/` locally. Adjust the port in these commands if you changed it in `.env`.
 
 ## Maintenance
 
@@ -49,4 +49,4 @@ If you enabled the UI, check `curl http://127.0.0.1:12345/-/ready` on the server
 
 The container shares the host network and PID namespaces. It mounts host `/proc`, `/sys`, the root filesystem, and udev data read-only. Its only writable mount is `./data` for Alloy state. No Docker port is published.
 
-After editing `.env` or `config.alloy`, apply changes with `docker compose up -d`. To update a checkout, run `git pull --ff-only` and then `docker compose up -d`. To stop Alloy, run `docker compose down`; `.env` and `data/` remain in place.
+After editing `.env` or `config.alloy`, apply changes with `docker compose up -d`. Running the download command again updates an existing checkout with `git pull --ff-only` before installing. To stop Alloy, run `docker compose down`; `.env` and `data/` remain in place.

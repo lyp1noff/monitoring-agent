@@ -2,10 +2,14 @@
 set -euo pipefail
 
 repo_url=https://github.com/lyp1noff/monitoring-agent.git
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+script_path=${BASH_SOURCE[0]:-}
+script_dir=
+if [[ -n "$script_path" && -f "$script_path" ]]; then
+  script_dir=$(cd "$(dirname "$script_path")" && pwd)
+fi
 
 # When fetched from GitHub, install the repository first, then use its local script.
-if [[ ! -f "$script_dir/compose.yml" || ! -f "$script_dir/config.alloy" ]]; then
+if [[ -z "$script_dir" || ! -f "$script_dir/compose.yml" || ! -f "$script_dir/config.alloy" ]]; then
   if ! command -v git >/dev/null 2>&1; then
     printf 'Git is required to download the monitoring-agent repository.\n' >&2
     exit 1
@@ -17,6 +21,13 @@ if [[ ! -f "$script_dir/compose.yml" || ! -f "$script_dir/config.alloy" ]]; then
       exit 1
     fi
     git clone "$repo_url" "$install_dir"
+  else
+    origin=$(git -C "$install_dir" remote get-url origin)
+    if [[ "$origin" != "$repo_url" && "$origin" != git@github.com:lyp1noff/monitoring-agent.git ]]; then
+      printf 'Unexpected Git origin in %s: %s\n' "$install_dir" "$origin" >&2
+      exit 1
+    fi
+    git -C "$install_dir" pull --ff-only
   fi
   if [[ ! -f "$install_dir/install.sh" || ! -f "$install_dir/compose.yml" ]]; then
     printf 'Missing monitoring-agent files in %s\n' "$install_dir" >&2
@@ -30,14 +41,14 @@ cd "$script_dir"
 usage() {
   cat <<'EOF'
 Usage: ./install.sh [--hostname NAME] [--environment NAME] [--site NAME]
-                    [--role NAME] [--prometheus-url URL] [--ui|--no-ui]
+                    [--role NAME] [--prometheus-url URL]
 
 With a terminal, missing values are prompted. Without a terminal, defaults are used.
 Existing .env values are kept when the matching argument is omitted.
 EOF
 }
 
-instance_arg= environment_arg= site_arg= role_arg= url_arg= ui_arg=
+instance_arg= environment_arg= site_arg= role_arg= url_arg=
 while (($#)); do
   case "$1" in
     --hostname|--environment|--site|--role|--prometheus-url)
@@ -54,8 +65,6 @@ while (($#)); do
       esac
       shift 2
       ;;
-    --ui) ui_arg=127.0.0.1:12345; shift ;;
-    --no-ui) ui_arg=127.0.0.1:0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
@@ -101,8 +110,8 @@ environment=$(choose "$environment_arg" "$(read_env ENVIRONMENT)" 'Environment')
 site=$(choose "$site_arg" "$(read_env SITE)" 'Site')
 role=$(choose "$role_arg" "$(read_env ROLE)" 'Role')
 url=$(choose "$url_arg" "$(read_env PROMETHEUS_URL)" 'Prometheus remote_write URL')
-ui_addr=${ui_arg:-$(read_env ALLOY_HTTP_LISTEN_ADDR)}
-ui_addr=${ui_addr:-127.0.0.1:0}
+http_addr=$(read_env ALLOY_HTTP_LISTEN_ADDR)
+http_addr=${http_addr:-127.0.0.1:12345}
 
 for value in "$instance" "$environment" "$site" "$role"; do
   if [[ ! "$value" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
@@ -118,8 +127,8 @@ if [[ "$url" == http://prometheus.example.com:9090/api/v1/write ]]; then
   printf 'Set --prometheus-url to your actual Prometheus receiver URL.\n' >&2
   exit 2
 fi
-if [[ "$ui_addr" != 127.0.0.1:0 && "$ui_addr" != 127.0.0.1:12345 ]]; then
-  printf 'ALLOY_HTTP_LISTEN_ADDR must be 127.0.0.1:0 or 127.0.0.1:12345.\n' >&2
+if [[ ! "$http_addr" =~ ^127[.]0[.]0[.]1:([1-9][0-9]{0,4})$ ]] || (( ${BASH_REMATCH[1]:-0} > 65535 )); then
+  printf 'ALLOY_HTTP_LISTEN_ADDR must be 127.0.0.1:<port> with port 1-65535.\n' >&2
   exit 2
 fi
 
@@ -127,7 +136,7 @@ tmp_env=$(mktemp .env.XXXXXX)
 trap 'rm -f "$tmp_env"' EXIT
 chmod 600 "$tmp_env"
 printf 'INSTANCE=%s\nENVIRONMENT=%s\nSITE=%s\nROLE=%s\nPROMETHEUS_URL=%s\nALLOY_HTTP_LISTEN_ADDR=%s\n' \
-  "$instance" "$environment" "$site" "$role" "$url" "$ui_addr" > "$tmp_env"
+  "$instance" "$environment" "$site" "$role" "$url" "$http_addr" > "$tmp_env"
 mv "$tmp_env" .env
 trap - EXIT
 
@@ -135,6 +144,4 @@ mkdir -p data
 docker compose config --quiet
 docker compose up -d
 printf 'Alloy started for %s. Check: docker compose ps; docker compose logs --tail=50 alloy\n' "$instance"
-if [[ "$ui_addr" == 127.0.0.1:12345 ]]; then
-  printf 'Alloy UI: http://127.0.0.1:12345/ (on this server only)\n'
-fi
+printf 'Alloy UI: http://%s/ (on this server only)\n' "$http_addr"
