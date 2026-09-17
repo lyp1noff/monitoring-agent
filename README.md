@@ -15,9 +15,11 @@ Run this command on a new server:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/lyp1noff/monitoring-agent/main/install.sh | \
-  bash -s -- --hostname web-01 --environment production --site london --role web \
+  bash -s -- --hostname web-01 \
   --prometheus-url http://prometheus.example.com:9090/api/v1/write
 ```
+
+Add `--group web` if the server belongs to a logical group. Each server needs a unique `--hostname` (stored as the `instance` metric label); the group is optional. To remove an existing group, rerun the installer with `--group ""`.
 
 Replace `prometheus.example.com` with your receiver's real address. The URL in `.env.example` is only a placeholder; the installer rejects it. The script clones the repository into `./monitoring-agent`, creates `.env` and `data/`, then starts Alloy with `docker compose up -d`. Set `MONITORING_AGENT_DIR` to use another install directory.
 
@@ -36,16 +38,16 @@ docker compose logs --tail=50 alloy
 In Prometheus or Grafana Explore, query:
 
 ```promql
-node_uname_info{instance="web-01",environment="production",site="london",role="web"}
+node_uname_info{instance="web-01"}
 ```
 
-Then check `node_cpu_seconds_total`, `node_memory_MemAvailable_bytes`, `node_filesystem_avail_bytes`, and `node_network_receive_bytes_total` with the same `instance`. Allow about a minute for the first samples.
+If you set a group, the series also has `group="web"`. Then check `node_cpu_seconds_total`, `node_memory_MemAvailable_bytes`, `node_filesystem_avail_bytes`, and `node_network_receive_bytes_total` with the same `instance`. Allow about a minute for the first samples. Import `grafana/dashboards/linux-hosts.json` into Grafana to view the host dashboard.
 
 Check `curl http://127.0.0.1:12345/-/ready` on the server. From your workstation, use `ssh -L 12345:127.0.0.1:12345 user@server` and open `http://127.0.0.1:12345/` locally. Adjust the port in these commands if you changed it in `.env`.
 
 ## Maintenance
 
-`.env` contains the four metric labels, the remote-write URL, and the local UI address. It is ignored by Git, as is the persistent `data/` directory. Give each server a unique `INSTANCE` to avoid merging time series.
+`.env` contains the required `INSTANCE`, optional `GROUP`, remote-write URL, and local UI address. Leave `GROUP=` empty for a server without a group. The file is ignored by Git, as is the persistent `data/` directory. Give each server a unique `INSTANCE` to avoid merging time series.
 
 The container shares the host network and PID namespaces. It mounts host `/proc`, `/sys`, the root filesystem, and udev data read-only. Its only writable mount is `./data` for Alloy state. No Docker port is published.
 

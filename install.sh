@@ -40,27 +40,25 @@ cd "$script_dir"
 
 usage() {
   cat <<'EOF'
-Usage: ./install.sh [--hostname NAME] [--environment NAME] [--site NAME]
-                    [--role NAME] [--prometheus-url URL]
+Usage: ./install.sh [--hostname NAME] [--group NAME] [--prometheus-url URL]
 
 With a terminal, missing values are prompted. Without a terminal, defaults are used.
 Existing .env values are kept when the matching argument is omitted.
 EOF
 }
 
-instance_arg= environment_arg= site_arg= role_arg= url_arg=
+instance_arg= group_arg= url_arg=
+group_set=0
 while (($#)); do
   case "$1" in
-    --hostname|--environment|--site|--role|--prometheus-url)
-      if (($# < 2)) || [[ -z "$2" ]]; then
+    --hostname|--group|--prometheus-url)
+      if (($# < 2)) || [[ -z "$2" && "$1" != --group ]]; then
         printf 'Missing value for %s\n' "$1" >&2
         exit 2
       fi
       case "$1" in
         --hostname) instance_arg=$2 ;;
-        --environment) environment_arg=$2 ;;
-        --site) site_arg=$2 ;;
-        --role) role_arg=$2 ;;
+        --group) group_arg=$2; group_set=1 ;;
         --prometheus-url) url_arg=$2 ;;
       esac
       shift 2
@@ -106,19 +104,23 @@ choose() {
 }
 
 instance=$(choose "$instance_arg" "$(read_env INSTANCE)" 'Hostname')
-environment=$(choose "$environment_arg" "$(read_env ENVIRONMENT)" 'Environment')
-site=$(choose "$site_arg" "$(read_env SITE)" 'Site')
-role=$(choose "$role_arg" "$(read_env ROLE)" 'Role')
+if ((group_set)); then
+  group=$group_arg
+else
+  group=$(choose '' "$(read_env GROUP)" 'Group (optional)')
+fi
 url=$(choose "$url_arg" "$(read_env PROMETHEUS_URL)" 'Prometheus remote_write URL')
 http_addr=$(read_env ALLOY_HTTP_LISTEN_ADDR)
 http_addr=${http_addr:-127.0.0.1:12345}
 
-for value in "$instance" "$environment" "$site" "$role"; do
-  if [[ ! "$value" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
-    printf 'Labels must be nonempty and contain only letters, digits, _, . or -.\n' >&2
-    exit 2
-  fi
-done
+if [[ ! "$instance" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+  printf 'Instance must contain only letters, digits, _, . or -.\n' >&2
+  exit 2
+fi
+if [[ -n "$group" && ! "$group" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+  printf 'Group must contain only letters, digits, _, . or -.\n' >&2
+  exit 2
+fi
 if [[ ! "$url" =~ ^https?://[A-Za-z0-9._~:/?\&=%+-]+$ ]]; then
   printf 'Prometheus URL must be an HTTP(S) URL without spaces or shell-special characters.\n' >&2
   exit 2
@@ -135,8 +137,8 @@ fi
 tmp_env=$(mktemp .env.XXXXXX)
 trap 'rm -f "$tmp_env"' EXIT
 chmod 600 "$tmp_env"
-printf 'INSTANCE=%s\nENVIRONMENT=%s\nSITE=%s\nROLE=%s\nPROMETHEUS_URL=%s\nALLOY_HTTP_LISTEN_ADDR=%s\n' \
-  "$instance" "$environment" "$site" "$role" "$url" "$http_addr" > "$tmp_env"
+printf 'INSTANCE=%s\nGROUP=%s\nPROMETHEUS_URL=%s\nALLOY_HTTP_LISTEN_ADDR=%s\n' \
+  "$instance" "$group" "$url" "$http_addr" > "$tmp_env"
 mv "$tmp_env" .env
 trap - EXIT
 

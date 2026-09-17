@@ -19,16 +19,8 @@ prometheus.relabel "host" {
     replacement  = sys.env("INSTANCE")
   }
   rule {
-    target_label = "environment"
-    replacement  = sys.env("ENVIRONMENT")
-  }
-  rule {
-    target_label = "site"
-    replacement  = sys.env("SITE")
-  }
-  rule {
-    target_label = "role"
-    replacement  = sys.env("ROLE")
+    target_label = "group"
+    replacement  = sys.env("GROUP")
   }
 }
 
